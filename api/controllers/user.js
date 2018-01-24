@@ -1,6 +1,8 @@
 'use strict'
 
 var User = require('../models/user');
+var Follow = require('../models/follow');
+
 var bcrypt = require('bcrypt-nodejs');
 var jwt = require('../services/jwt')
 var mongoosePaginate = require('mongoose-pagination')
@@ -112,6 +114,10 @@ function getUser(req, res) {
     User.findById(userId, (err, user) => {
         if (err) return res.status(500).send({ message: 'Error en la petición' })
         if (!user) return res.status(404).send({ message: 'El usuario no existe' })
+
+        Follow.findOne({"user": req.user.sub, "followed": userId}).exec((err,follow)=>{
+            if (err) return res.status(500).send({ message: 'Error al comprobar el seguimiento' });
+        })
 
         return res.status(200).send({ user })
     });
