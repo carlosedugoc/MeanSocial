@@ -199,12 +199,11 @@ async function followUserIds(user__id) {
 function getCounters(req, res){
     var userId = req.user.sub
     if(req.params.id){
-        getCountFollow(req.params.id).then((value)=>{
-            return res.status(200).send(value)
-        })
-    }else{
-
+        userId = req.params.id;
     }
+    getCountFollow(userId).then((value)=>{
+        return res.status(200).send(value);
+    })
 
 }
 
