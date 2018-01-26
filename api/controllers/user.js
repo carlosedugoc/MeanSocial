@@ -114,13 +114,32 @@ function getUser(req, res) {
     User.findById(userId, (err, user) => {
         if (err) return res.status(500).send({ message: 'Error en la petición' })
         if (!user) return res.status(404).send({ message: 'El usuario no existe' })
-
-        Follow.findOne({"user": req.user.sub, "followed": userId}).exec((err,follow)=>{
-            if (err) return res.status(500).send({ message: 'Error al comprobar el seguimiento' });
+        followThisUser(req.user.sub, userId).then((value) => {
+            // return res.status(200).send({ user, value })
+            return res.status(200).send({
+                user,
+                following: value.following,
+                followed: value.followed
+            })
         })
-
-        return res.status(200).send({ user })
     });
+}
+
+async function followThisUser(identity_user_id, user_id) {
+    var following = await Follow.findOne({ "user": identity_user_id, "followed": user_id }).exec((err, follow) => {
+        if (err) return handleError(err);
+        return follow;
+    });
+
+    var followed = await Follow.findOne({ "user": user_id, "followed": identity_user_id }).exec((err, follow) => {
+        if (err) return handleError(err);
+        return follow;
+    });
+
+    return {
+        following: following,
+        followed: followed
+    }
 }
 
 //Devolver listado de usuarios paginados
@@ -138,12 +157,72 @@ function getUsers(req, res) {
         if (err) return res.status(500).send({ message: 'Error en la petición' });
         if (!users) return res.status(404).send({ message: 'No hay usuarios disponibles' });
 
-        return res.status(200).send({
-            users,
-            total,
-            pages: Math.ceil(total / itemsPerPage)
+        followUserIds(identity_user_id).then((value) => {
+            return res.status(200).send({
+                users,
+                users_following: value.following,
+                users_followed: value.followed,
+                total,
+                pages: Math.ceil(total / itemsPerPage)
+            });
         })
+
     });
+}
+
+async function followUserIds(user__id) {
+    var following = await Follow.find({ "user": user__id }).select({ '_id': 0, '__v': 0, 'user': 0 }).exec((err, follows) => {
+        return follows;
+    })
+
+    var followed = await Follow.find({ "followed": user__id }).select({ '_id': 0, '__v': 0, 'followed': 0 }).exec((err, follows) => {
+        return follows;
+    })
+
+    var following_clean = []
+    following.forEach((follow) => {
+        following_clean.push(follow.followed)
+    })
+
+
+    var followed_clean = []
+    followed.forEach((follow) => {
+        followed_clean.push(follow.user)
+    })
+
+    return {
+        following: following_clean,
+        followed: followed_clean
+    }
+}
+
+function getCounters(req, res){
+    var userId = req.user.sub
+    if(req.params.id){
+        getCountFollow(req.params.id).then((value)=>{
+            return res.status(200).send(value)
+        })
+    }else{
+
+    }
+
+}
+
+async function getCountFollow(user_id){
+    var following = await Follow.count ({'user':user_id}).exec((err,count)=>{
+        if(err) return handleError(err);
+        return count;
+    })
+
+    var followed = await Follow.count ({'followed':user_id}).exec((err,count)=>{
+        if(err) return handleError(err);
+        return count;
+    })
+
+    return {
+        following,
+        followed
+    }
 }
 
 //Edición para datos de usuario
@@ -170,14 +249,14 @@ function updateUser(req, res) {
 
 }
 
-function uploadImage(req, res){
+function uploadImage(req, res) {
     var userId = req.params.id;
 
     if (userId != req.user.sub) {
         return res.status(500).send({ message: 'No tiene permiso para actualizar los datos de usuario' });
     }
 
-    if(req.files){
+    if (req.files) {
         var file_path = req.files.image.path;
         var file_split = file_path.split('\\')
 
@@ -190,39 +269,39 @@ function uploadImage(req, res){
             return removeFilesOfUploads(res, file_path, 'No tiene permiso para actualizar los datos de usuario');
         }
 
-        if (file_ext == 'png' || file_ext == 'jpg' || file_ext == 'jpeg' || file_ext == 'gif' ){
+        if (file_ext == 'png' || file_ext == 'jpg' || file_ext == 'jpeg' || file_ext == 'gif') {
 
-            User.findByIdAndUpdate(userId, {image:file_name}, { new: true }, (err, userUpdated) => {
+            User.findByIdAndUpdate(userId, { image: file_name }, { new: true }, (err, userUpdated) => {
                 if (err) return res.status(500).send({ message: 'Error en la petición' });
                 if (!userUpdated) return res.status(404).send({ message: 'No se ha podido actualizar el usuario' });
-        
+
                 return res.status(200).send({ user: userUpdated })
             })
-                           
-        }else{
-           return removeFilesOfUploads(res, file_path, 'Extensión no válida'); 
+
+        } else {
+            return removeFilesOfUploads(res, file_path, 'Extensión no válida');
         }
 
-    }else{
-        return res.status(200).send({message: 'No se han subido imágenes'})
+    } else {
+        return res.status(200).send({ message: 'No se han subido imágenes' })
     }
 }
 
-function removeFilesOfUploads(res, file_path, message){
-    fs.unlink(file_path,(err)=>{
+function removeFilesOfUploads(res, file_path, message) {
+    fs.unlink(file_path, (err) => {
         return res.status(200).send({ message: message });
     });
 }
 
 
-function getImageFile(req, res){
+function getImageFile(req, res) {
     var imageFile = req.params.imageFile;
-    var path_file = './uploads/users/'+imageFile;
-    fs.exists(path_file,(exists)=>{
-        if(exists){
+    var path_file = './uploads/users/' + imageFile;
+    fs.exists(path_file, (exists) => {
+        if (exists) {
             res.sendFile(path.resolve(path_file));
-        }else{
-            res.status(200).send({message:'No existe la imagen'});
+        } else {
+            res.status(200).send({ message: 'No existe la imagen' });
         }
     })
 }
@@ -234,6 +313,7 @@ module.exports = {
     loginUser,
     getUser,
     getUsers,
+    getCounters,
     updateUser,
     uploadImage,
     getImageFile
